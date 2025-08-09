@@ -1603,6 +1603,14 @@ $(document).ready(function(){
         }
     });
 
+    if (window.localStorage.getItem('terraformincludeimportblocks') == "true") {
+        $('#terraformincludeimportblocks').prop('checked', true);
+    }
+    $('#terraformincludeimportblocks').change(function() {
+        window.localStorage.setItem('terraformincludeimportblocks', $(this).is(':checked').toString());
+        regenerateOutputs();
+    });
+
     if (window.localStorage.getItem('credentials-secretkey')) {
         $('.scan-account').removeAttr('disabled');
     }
@@ -1764,7 +1772,8 @@ function saveSettings() {
             'relatedresourcessetting': window.localStorage.getItem('relatedresourcessetting'),
             'skipirrelevantresources': window.localStorage.getItem('skipirrelevantresources'),
             'uselocalstackendpoint': window.localStorage.getItem('uselocalstackendpoint'),
-            'includedefaultresources': window.localStorage.getItem('includedefaultresources')
+            'includedefaultresources': window.localStorage.getItem('includedefaultresources'),
+            'terraformincludeimportblocks': window.localStorage.getItem('terraformincludeimportblocks')
         }
     };
 
@@ -1827,6 +1836,13 @@ function loadSettings() {
                 } else {
                     $('#includedefaultresources').prop('checked', false);
                     include_default_resources = false;
+                }
+            }
+            if ('terraformincludeimportblocks' in loaded_settings.settings) {
+                if (loaded_settings.settings.terraformincludeimportblocks == "true") {
+                    $('#terraformincludeimportblocks').prop('checked', true);
+                } else {
+                    $('#terraformincludeimportblocks').prop('checked', false);
                 }
             }
         }

@@ -2547,6 +2547,1856 @@ ${cfnspacing}${cfnspacing}Properties:${params}
     return output;
 }
 
+function generateTerraformImportId(resourceType, physicalId, resourceData) {
+    // Generate correct Terraform import ID based on resource type
+    // Reference: https://registry.terraform.io/providers/hashicorp/aws/latest/docs/
+    
+    switch (resourceType) {
+        // VPC Resources
+        case 'aws_route':
+            // Routes need route_table_id_destination_cidr format
+            if (resourceData && resourceData.RouteTableId && resourceData.DestinationCidrBlock) {
+                return `${resourceData.RouteTableId}_${resourceData.DestinationCidrBlock}`;
+            }
+            if (resourceData && resourceData.RouteTableId && resourceData.DestinationIpv6CidrBlock) {
+                return `${resourceData.RouteTableId}_${resourceData.DestinationIpv6CidrBlock}`;
+            }
+            break;
+            
+        case 'aws_internet_gateway_attachment':
+            // Internet Gateway attachments need igw-id:vpc-id format
+            if (resourceData && resourceData.InternetGatewayId && resourceData.VpcId) {
+                return `${resourceData.InternetGatewayId}:${resourceData.VpcId}`;
+            }
+            break;
+            
+        case 'aws_route_table_association':
+            // Route table associations need subnet-id/route-table-id format
+            if (resourceData && resourceData.SubnetId && resourceData.RouteTableId) {
+                return `${resourceData.SubnetId}/${resourceData.RouteTableId}`;
+            }
+            // Main route table association uses vpc-id/route-table-id format
+            if (resourceData && resourceData.VpcId && resourceData.RouteTableId && resourceData.Main) {
+                return `${resourceData.VpcId}/${resourceData.RouteTableId}`;
+            }
+            break;
+            
+        case 'aws_vpc_peering_connection':
+            if (resourceData && resourceData.VpcPeeringConnectionId) {
+                return resourceData.VpcPeeringConnectionId;
+            }
+            break;
+            
+        case 'aws_vpc_peering_connection_accepter':
+            if (resourceData && resourceData.VpcPeeringConnectionId) {
+                return resourceData.VpcPeeringConnectionId;
+            }
+            break;
+            
+        case 'aws_security_group_rule':
+            // Security group rules use complex format: sg-id_type_protocol_from_port_to_port_cidr/sg-id
+            if (resourceData) {
+                var type = resourceData.Egress ? 'egress' : 'ingress';
+                var protocol = resourceData.IpProtocol || 'all';
+                var fromPort = resourceData.FromPort || '0';
+                var toPort = resourceData.ToPort || '65535';
+                var source = '';
+                if (resourceData.CidrBlocks && resourceData.CidrBlocks.length > 0) {
+                    source = resourceData.CidrBlocks[0];
+                } else if (resourceData.GroupId) {
+                    source = resourceData.GroupId;
+                } else if (resourceData.SourceSecurityGroupName) {
+                    source = resourceData.SourceSecurityGroupName;
+                }
+                if (source) {
+                    return `${physicalId}_${type}_${protocol}_${fromPort}_${toPort}_${source}`;
+                }
+            }
+            break;
+            
+        case 'aws_network_acl_rule':
+            // Network ACL rules use nacl-id_egress_rule_number format
+            if (resourceData && resourceData.NetworkAclId && resourceData.RuleNumber !== undefined) {
+                var egress = resourceData.Egress ? 'true' : 'false';
+                return `${resourceData.NetworkAclId}_${egress}_${resourceData.RuleNumber}`;
+            }
+            break;
+
+        case 'aws_network_acl_association':
+            // Network ACL associations use subnet-id/nacl-id format
+            if (resourceData && resourceData.SubnetId && resourceData.NetworkAclId) {
+                return `${resourceData.SubnetId}/${resourceData.NetworkAclId}`;
+            }
+            break;
+
+        case 'aws_vpc_dhcp_options_association':
+            // DHCP options associations use dhcp-options-id:vpc-id format
+            if (resourceData && resourceData.DhcpOptionsId && resourceData.VpcId) {
+                return `${resourceData.DhcpOptionsId}:${resourceData.VpcId}`;
+            }
+            break;
+
+        case 'aws_default_vpc_dhcp_options':
+        case 'aws_default_vpc':
+        case 'aws_default_subnet':
+        case 'aws_default_security_group':
+        case 'aws_default_network_acl':
+        case 'aws_default_route_table':
+            // Default resources use VPC ID
+            if (resourceData && resourceData.VpcId) {
+                return resourceData.VpcId;
+            }
+            break;
+
+        // EC2 Resources  
+        case 'aws_eip_association':
+            // EIP associations use allocation-id/instance-id or allocation-id/network-interface-id format
+            if (resourceData && resourceData.AllocationId) {
+                if (resourceData.InstanceId) {
+                    return `${resourceData.AllocationId}/${resourceData.InstanceId}`;
+                }
+                if (resourceData.NetworkInterfaceId) {
+                    return `${resourceData.AllocationId}/${resourceData.NetworkInterfaceId}`;
+                }
+            }
+            break;
+
+        case 'aws_volume_attachment':
+            // Volume attachments use device_name:instance_id:volume_id format
+            if (resourceData && resourceData.Device && resourceData.InstanceId && resourceData.VolumeId) {
+                return `${resourceData.Device}:${resourceData.InstanceId}:${resourceData.VolumeId}`;
+            }
+            break;
+
+        case 'aws_network_interface_attachment':
+            // Network interface attachments use eni-id:instance-id format
+            if (resourceData && resourceData.NetworkInterfaceId && resourceData.InstanceId) {
+                return `${resourceData.NetworkInterfaceId}:${resourceData.InstanceId}`;
+            }
+            break;
+
+        case 'aws_ami_launch_permission':
+            // AMI launch permissions use ami-id/account-id format
+            if (resourceData && resourceData.ImageId && resourceData.AccountId) {
+                return `${resourceData.ImageId}/${resourceData.AccountId}`;
+            }
+            break;
+
+        // Transit Gateway Resources
+        case 'aws_ec2_transit_gateway_route':
+            // Transit Gateway routes use tgw-rtb-id_destination_cidr format
+            if (resourceData && resourceData.TransitGatewayRouteTableId && resourceData.DestinationCidrBlock) {
+                return `${resourceData.TransitGatewayRouteTableId}_${resourceData.DestinationCidrBlock}`;
+            }
+            break;
+
+        case 'aws_ec2_transit_gateway_route_table_association':
+            // TGW route table associations use tgw-rtb-id/tgw-attach-id format
+            if (resourceData && resourceData.TransitGatewayRouteTableId && resourceData.TransitGatewayAttachmentId) {
+                return `${resourceData.TransitGatewayRouteTableId}/${resourceData.TransitGatewayAttachmentId}`;
+            }
+            break;
+
+        case 'aws_ec2_transit_gateway_route_table_propagation':
+            // TGW route table propagations use tgw-rtb-id/tgw-attach-id format
+            if (resourceData && resourceData.TransitGatewayRouteTableId && resourceData.TransitGatewayAttachmentId) {
+                return `${resourceData.TransitGatewayRouteTableId}/${resourceData.TransitGatewayAttachmentId}`;
+            }
+            break;
+
+        case 'aws_ec2_transit_gateway_vpc_attachment_accepter':
+            // TGW VPC attachment accepter uses attachment ID
+            if (resourceData && resourceData.TransitGatewayAttachmentId) {
+                return resourceData.TransitGatewayAttachmentId;
+            }
+            break;
+
+        // Load Balancer Resources
+        case 'aws_lb_target_group_attachment':
+        case 'aws_alb_target_group_attachment':
+            // Target group attachments use target-group-arn/target-id/port format
+            if (resourceData && resourceData.TargetGroupArn && resourceData.TargetId) {
+                var port = resourceData.Port || '';
+                return `${resourceData.TargetGroupArn}/${resourceData.TargetId}${port ? '/' + port : ''}`;
+            }
+            break;
+
+        case 'aws_lb_listener_certificate':
+        case 'aws_alb_listener_certificate':
+            // Listener certificates use listener-arn/certificate-arn format
+            if (resourceData && resourceData.ListenerArn && resourceData.CertificateArn) {
+                return `${resourceData.ListenerArn}/${resourceData.CertificateArn}`;
+            }
+            break;
+
+        case 'aws_elb_attachment':
+            // ELB attachments use elb-name/instance-id format
+            if (resourceData && resourceData.LoadBalancerName && resourceData.InstanceId) {
+                return `${resourceData.LoadBalancerName}/${resourceData.InstanceId}`;
+            }
+            break;
+
+        case 'aws_load_balancer_policy':
+            // Load balancer policies use load-balancer-name:policy-name format
+            if (resourceData && resourceData.LoadBalancerName && resourceData.PolicyName) {
+                return `${resourceData.LoadBalancerName}:${resourceData.PolicyName}`;
+            }
+            break;
+
+        case 'aws_load_balancer_backend_server_policy':
+            // Backend server policies use load-balancer-name:instance-port format
+            if (resourceData && resourceData.LoadBalancerName && resourceData.InstancePort) {
+                return `${resourceData.LoadBalancerName}:${resourceData.InstancePort}`;
+            }
+            break;
+
+        case 'aws_load_balancer_listener_policy':
+            // Listener policies use load-balancer-name:load-balancer-port format
+            if (resourceData && resourceData.LoadBalancerName && resourceData.LoadBalancerPort) {
+                return `${resourceData.LoadBalancerName}:${resourceData.LoadBalancerPort}`;
+            }
+            break;
+
+        // IAM Resources
+        case 'aws_iam_role_policy_attachment':
+            // Role policy attachments use role-name/policy-arn format
+            if (resourceData && resourceData.RoleName && resourceData.PolicyArn) {
+                return `${resourceData.RoleName}/${resourceData.PolicyArn}`;
+            }
+            break;
+
+        case 'aws_iam_user_policy_attachment':
+            // User policy attachments use user-name/policy-arn format
+            if (resourceData && resourceData.UserName && resourceData.PolicyArn) {
+                return `${resourceData.UserName}/${resourceData.PolicyArn}`;
+            }
+            break;
+
+        case 'aws_iam_group_policy_attachment':
+            // Group policy attachments use group-name/policy-arn format
+            if (resourceData && resourceData.GroupName && resourceData.PolicyArn) {
+                return `${resourceData.GroupName}/${resourceData.PolicyArn}`;
+            }
+            break;
+
+        case 'aws_iam_group_membership':
+            // Group memberships use group-name format
+            if (resourceData && resourceData.GroupName) {
+                return resourceData.GroupName;
+            }
+            break;
+
+        case 'aws_iam_user_group_membership':
+            // User group memberships use user-name/group-name format
+            if (resourceData && resourceData.UserName && resourceData.GroupName) {
+                return `${resourceData.UserName}/${resourceData.GroupName}`;
+            }
+            break;
+
+        case 'aws_iam_instance_profile':
+            // Instance profiles use profile name
+            if (resourceData && resourceData.InstanceProfileName) {
+                return resourceData.InstanceProfileName;
+            }
+            break;
+
+        case 'aws_iam_service_linked_role':
+            // Service linked roles use service name
+            if (resourceData && resourceData.AWSServiceName) {
+                return resourceData.AWSServiceName;
+            }
+            break;
+
+        // S3 Resources
+        case 'aws_s3_bucket_policy':
+            // S3 bucket policies use bucket name
+            if (resourceData && resourceData.Bucket) {
+                return resourceData.Bucket;
+            }
+            break;
+
+        case 'aws_s3_bucket_notification':
+            // S3 bucket notifications use bucket name
+            if (resourceData && resourceData.Bucket) {
+                return resourceData.Bucket;
+            }
+            break;
+
+        case 'aws_s3_bucket_metric':
+            // S3 bucket metrics use bucket:metric-name format
+            if (resourceData && resourceData.Bucket && resourceData.Name) {
+                return `${resourceData.Bucket}:${resourceData.Name}`;
+            }
+            break;
+
+        case 'aws_s3_bucket_inventory':
+            // S3 bucket inventory use bucket:inventory-name format
+            if (resourceData && resourceData.Bucket && resourceData.Name) {
+                return `${resourceData.Bucket}:${resourceData.Name}`;
+            }
+            break;
+
+        case 'aws_s3_bucket_object':
+            // S3 objects use bucket/key format
+            if (resourceData && resourceData.Bucket && resourceData.Key) {
+                return `${resourceData.Bucket}/${resourceData.Key}`;
+            }
+            break;
+
+        // RDS Resources
+        case 'aws_db_subnet_group':
+            // DB subnet groups use subnet group name
+            if (resourceData && resourceData.DBSubnetGroupName) {
+                return resourceData.DBSubnetGroupName;
+            }
+            break;
+
+        case 'aws_db_parameter_group':
+            // DB parameter groups use parameter group name
+            if (resourceData && resourceData.DBParameterGroupName) {
+                return resourceData.DBParameterGroupName;
+            }
+            break;
+
+        case 'aws_db_cluster_parameter_group':
+            // DB cluster parameter groups use parameter group name
+            if (resourceData && resourceData.DBClusterParameterGroupName) {
+                return resourceData.DBClusterParameterGroupName;
+            }
+            break;
+
+        case 'aws_db_option_group':
+            // DB option groups use option group name
+            if (resourceData && resourceData.OptionGroupName) {
+                return resourceData.OptionGroupName;
+            }
+            break;
+
+        case 'aws_rds_cluster_instance':
+            // RDS cluster instances use instance identifier
+            if (resourceData && resourceData.DBInstanceIdentifier) {
+                return resourceData.DBInstanceIdentifier;
+            }
+            break;
+
+        // Lambda Resources
+        case 'aws_lambda_permission':
+            // Lambda permissions use function-name/statement-id format
+            if (resourceData && resourceData.FunctionName && resourceData.StatementId) {
+                return `${resourceData.FunctionName}/${resourceData.StatementId}`;
+            }
+            break;
+
+        case 'aws_lambda_event_source_mapping':
+            // Lambda event source mappings use UUID
+            if (resourceData && resourceData.UUID) {
+                return resourceData.UUID;
+            }
+            break;
+
+        case 'aws_lambda_layer_version_permission':
+            // Lambda layer version permissions use layer:version/statement-id format
+            if (resourceData && resourceData.LayerName && resourceData.VersionNumber && resourceData.StatementId) {
+                return `${resourceData.LayerName}:${resourceData.VersionNumber}/${resourceData.StatementId}`;
+            }
+            break;
+
+        // API Gateway Resources
+        case 'aws_api_gateway_integration':
+            // API Gateway integrations use rest-api-id/resource-id/http-method format
+            if (resourceData && resourceData.RestApiId && resourceData.ResourceId && resourceData.HttpMethod) {
+                return `${resourceData.RestApiId}/${resourceData.ResourceId}/${resourceData.HttpMethod}`;
+            }
+            break;
+
+        case 'aws_api_gateway_integration_response':
+            // API Gateway integration responses use rest-api-id/resource-id/http-method/status-code format
+            if (resourceData && resourceData.RestApiId && resourceData.ResourceId && resourceData.HttpMethod && resourceData.StatusCode) {
+                return `${resourceData.RestApiId}/${resourceData.ResourceId}/${resourceData.HttpMethod}/${resourceData.StatusCode}`;
+            }
+            break;
+
+        case 'aws_api_gateway_method':
+            // API Gateway methods use rest-api-id/resource-id/http-method format
+            if (resourceData && resourceData.RestApiId && resourceData.ResourceId && resourceData.HttpMethod) {
+                return `${resourceData.RestApiId}/${resourceData.ResourceId}/${resourceData.HttpMethod}`;
+            }
+            break;
+
+        case 'aws_api_gateway_method_response':
+            // API Gateway method responses use rest-api-id/resource-id/http-method/status-code format
+            if (resourceData && resourceData.RestApiId && resourceData.ResourceId && resourceData.HttpMethod && resourceData.StatusCode) {
+                return `${resourceData.RestApiId}/${resourceData.ResourceId}/${resourceData.HttpMethod}/${resourceData.StatusCode}`;
+            }
+            break;
+
+        case 'aws_api_gateway_resource':
+            // API Gateway resources use rest-api-id/resource-id format
+            if (resourceData && resourceData.RestApiId && resourceData.Id) {
+                return `${resourceData.RestApiId}/${resourceData.Id}`;
+            }
+            break;
+
+        case 'aws_api_gateway_authorizer':
+            // API Gateway authorizers use rest-api-id/authorizer-id format
+            if (resourceData && resourceData.RestApiId && resourceData.Id) {
+                return `${resourceData.RestApiId}/${resourceData.Id}`;
+            }
+            break;
+
+        case 'aws_api_gateway_vpc_link':
+            // API Gateway VPC links use vpc link ID
+            if (resourceData && resourceData.Id) {
+                return resourceData.Id;
+            }
+            break;
+
+        case 'aws_api_gateway_base_path_mapping':
+            // API Gateway base path mappings use domain-name/base-path format
+            if (resourceData && resourceData.DomainName) {
+                var basePath = resourceData.BasePath || '';
+                return `${resourceData.DomainName}/${basePath}`;
+            }
+            break;
+
+        // CloudFormation Resources
+        case 'aws_cloudformation_stack_set_instance':
+            // CloudFormation stack set instances use stack-set-name/account-id/region format
+            if (resourceData && resourceData.StackSetName && resourceData.AccountId && resourceData.Region) {
+                return `${resourceData.StackSetName}/${resourceData.AccountId}/${resourceData.Region}`;
+            }
+            break;
+
+        // Auto Scaling Resources
+        case 'aws_autoscaling_attachment':
+            // Auto Scaling attachments use asg-name/lb-target-group-arn or asg-name/elb-name format
+            if (resourceData && resourceData.AutoscalingGroupName) {
+                if (resourceData.LoadBalancerTargetGroupArn) {
+                    return `${resourceData.AutoscalingGroupName}/${resourceData.LoadBalancerTargetGroupArn}`;
+                }
+                if (resourceData.ElbName) {
+                    return `${resourceData.AutoscalingGroupName}/${resourceData.ElbName}`;
+                }
+            }
+            break;
+
+        case 'aws_autoscaling_lifecycle_hook':
+            // Auto Scaling lifecycle hooks use asg-name/lifecycle-hook-name format
+            if (resourceData && resourceData.AutoScalingGroupName && resourceData.LifecycleHookName) {
+                return `${resourceData.AutoScalingGroupName}/${resourceData.LifecycleHookName}`;
+            }
+            break;
+
+        case 'aws_autoscaling_notification':
+            // Auto Scaling notifications use asg-name/notification-type/topic-arn format
+            if (resourceData && resourceData.GroupNames && resourceData.NotificationTypes && resourceData.TopicArn) {
+                return `${resourceData.GroupNames[0]}/${resourceData.NotificationTypes[0]}/${resourceData.TopicArn}`;
+            }
+            break;
+
+        // Route53 Resources - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/route53_record
+        case 'aws_route53_record':
+            // Route53 records use zone-id_name_type format
+            if (resourceData && resourceData.ZoneId && resourceData.Name && resourceData.Type) {
+                return `${resourceData.ZoneId}_${resourceData.Name}_${resourceData.Type}`;
+            }
+            break;
+
+        case 'aws_route53_zone_association':
+            // Route53 zone associations use hosted-zone-id:vpc-id format
+            if (resourceData && resourceData.HostedZoneId && resourceData.VPCId) {
+                return `${resourceData.HostedZoneId}:${resourceData.VPCId}`;
+            }
+            break;
+
+        case 'aws_route53_resolver_rule_association':
+            // Route53 resolver rule associations use resolver-rule-id:vpc-id format
+            if (resourceData && resourceData.ResolverRuleId && resourceData.VPCId) {
+                return `${resourceData.ResolverRuleId}:${resourceData.VPCId}`;
+            }
+            break;
+
+        // CloudWatch Resources - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/cloudwatch_log_subscription_filter
+        case 'aws_cloudwatch_log_subscription_filter':
+            // CloudWatch log subscription filters use log-group-name|filter-name format
+            if (resourceData && resourceData.LogGroupName && resourceData.FilterName) {
+                return `${resourceData.LogGroupName}|${resourceData.FilterName}`;
+            }
+            break;
+
+        case 'aws_cloudwatch_log_metric_filter':
+            // CloudWatch log metric filters use log-group-name:filter-name format
+            if (resourceData && resourceData.LogGroupName && resourceData.FilterName) {
+                return `${resourceData.LogGroupName}:${resourceData.FilterName}`;
+            }
+            break;
+
+        case 'aws_cloudwatch_event_target':
+            // CloudWatch event targets use rule-name/target-id format
+            if (resourceData && resourceData.Rule && resourceData.TargetId) {
+                return `${resourceData.Rule}/${resourceData.TargetId}`;
+            }
+            break;
+
+        // VPC Endpoint Resources - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/vpc_endpoint_route_table_association
+        case 'aws_vpc_endpoint_route_table_association':
+            // VPC endpoint route table associations use vpc-endpoint-id/route-table-id format
+            if (resourceData && resourceData.VpcEndpointId && resourceData.RouteTableId) {
+                return `${resourceData.VpcEndpointId}/${resourceData.RouteTableId}`;
+            }
+            break;
+
+        case 'aws_vpc_endpoint_subnet_association':
+            // VPC endpoint subnet associations use vpc-endpoint-id/subnet-id format
+            if (resourceData && resourceData.VpcEndpointId && resourceData.SubnetId) {
+                return `${resourceData.VpcEndpointId}/${resourceData.SubnetId}`;
+            }
+            break;
+
+        case 'aws_vpc_endpoint_service_allowed_principal':
+            // VPC endpoint service allowed principals use vpc-endpoint-service-id/principal-arn format
+            if (resourceData && resourceData.VpcEndpointServiceId && resourceData.PrincipalArn) {
+                return `${resourceData.VpcEndpointServiceId}/${resourceData.PrincipalArn}`;
+            }
+            break;
+
+        // Secrets Manager Resources - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/secretsmanager_secret_version
+        case 'aws_secretsmanager_secret_version':
+            // Secrets Manager secret versions use secret-arn|version-id format
+            if (resourceData && resourceData.SecretId && resourceData.VersionId) {
+                return `${resourceData.SecretId}|${resourceData.VersionId}`;
+            }
+            break;
+
+        case 'aws_secretsmanager_secret_rotation':
+            // Secrets Manager secret rotation uses secret ARN
+            if (resourceData && resourceData.SecretId) {
+                return resourceData.SecretId;
+            }
+            break;
+
+        case 'aws_secretsmanager_secret_policy':
+            // Secrets Manager secret policy uses secret ARN
+            if (resourceData && resourceData.SecretArn) {
+                return resourceData.SecretArn;
+            }
+            break;
+
+        // SNS Resources - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/sns_topic_subscription
+        case 'aws_sns_topic_subscription':
+            // SNS topic subscriptions use subscription ARN
+            if (resourceData && resourceData.SubscriptionArn) {
+                return resourceData.SubscriptionArn;
+            }
+            break;
+
+        case 'aws_sns_topic_policy':
+            // SNS topic policies use topic ARN
+            if (resourceData && resourceData.TopicArn) {
+                return resourceData.TopicArn;
+            }
+            break;
+
+        // SQS Resources - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/sqs_queue_policy
+        case 'aws_sqs_queue_policy':
+            // SQS queue policies use queue URL
+            if (resourceData && resourceData.QueueUrl) {
+                return resourceData.QueueUrl;
+            }
+            break;
+
+        // DynamoDB Resources - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/dynamodb_table_item
+        case 'aws_dynamodb_table_item':
+            // DynamoDB table items use table-name:hash-key format
+            if (resourceData && resourceData.TableName && resourceData.HashKey) {
+                return `${resourceData.TableName}:${resourceData.HashKey}`;
+            }
+            break;
+
+        case 'aws_dynamodb_global_table':
+            // DynamoDB global tables use table name
+            if (resourceData && resourceData.Name) {
+                return resourceData.Name;
+            }
+            break;
+
+        // ECS Resources - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/ecs_service
+        case 'aws_ecs_service':
+            // ECS services use cluster-name/service-name format
+            if (resourceData && resourceData.ClusterArn && resourceData.ServiceName) {
+                // Extract cluster name from ARN
+                var clusterName = resourceData.ClusterArn.split('/').pop();
+                return `${clusterName}/${resourceData.ServiceName}`;
+            }
+            break;
+
+        // ECR Resources - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/ecr_repository_policy
+        case 'aws_ecr_repository_policy':
+            // ECR repository policies use repository name
+            if (resourceData && resourceData.RepositoryName) {
+                return resourceData.RepositoryName;
+            }
+            break;
+
+        case 'aws_ecr_lifecycle_policy':
+            // ECR lifecycle policies use repository name
+            if (resourceData && resourceData.RepositoryName) {
+                return resourceData.RepositoryName;
+            }
+            break;
+
+        // ElastiCache Resources - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/elasticache_subnet_group
+        case 'aws_elasticache_subnet_group':
+            // ElastiCache subnet groups use subnet group name
+            if (resourceData && resourceData.CacheSubnetGroupName) {
+                return resourceData.CacheSubnetGroupName;
+            }
+            break;
+
+        case 'aws_elasticache_parameter_group':
+            // ElastiCache parameter groups use parameter group name
+            if (resourceData && resourceData.CacheParameterGroupName) {
+                return resourceData.CacheParameterGroupName;
+            }
+            break;
+
+        case 'aws_elasticache_security_group':
+            // ElastiCache security groups use security group name
+            if (resourceData && resourceData.CacheSecurityGroupName) {
+                return resourceData.CacheSecurityGroupName;
+            }
+            break;
+
+        // VPN Resources - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/vpn_connection_route
+        case 'aws_vpn_connection_route':
+            // VPN connection routes use vpn-connection-id:destination-cidr format
+            if (resourceData && resourceData.VpnConnectionId && resourceData.DestinationCidrBlock) {
+                return `${resourceData.VpnConnectionId}:${resourceData.DestinationCidrBlock}`;
+            }
+            break;
+
+        case 'aws_vpn_gateway_attachment':
+            // VPN gateway attachments use vpn-gateway-id:vpc-id format
+            if (resourceData && resourceData.VpnGatewayId && resourceData.VpcId) {
+                return `${resourceData.VpnGatewayId}:${resourceData.VpcId}`;
+            }
+            break;
+
+        case 'aws_vpn_gateway_route_propagation':
+            // VPN gateway route propagations use route-table-id:vpn-gateway-id format
+            if (resourceData && resourceData.RouteTableId && resourceData.VpnGatewayId) {
+                return `${resourceData.RouteTableId}:${resourceData.VpnGatewayId}`;
+            }
+            break;
+
+        // WAF Resources - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/wafregional_web_acl_association
+        case 'aws_wafregional_web_acl_association':
+            // WAF regional web ACL associations use web-acl-id/resource-arn format
+            if (resourceData && resourceData.WebAclId && resourceData.ResourceArn) {
+                return `${resourceData.WebAclId}/${resourceData.ResourceArn}`;
+            }
+            break;
+
+        // API Gateway V2 Resources - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/apigatewayv2_route
+        case 'aws_apigatewayv2_route':
+            // API Gateway V2 routes use api-id/route-id format
+            if (resourceData && resourceData.ApiId && resourceData.RouteId) {
+                return `${resourceData.ApiId}/${resourceData.RouteId}`;
+            }
+            break;
+
+        case 'aws_apigatewayv2_integration':
+            // API Gateway V2 integrations use api-id/integration-id format
+            if (resourceData && resourceData.ApiId && resourceData.IntegrationId) {
+                return `${resourceData.ApiId}/${resourceData.IntegrationId}`;
+            }
+            break;
+
+        case 'aws_apigatewayv2_authorizer':
+            // API Gateway V2 authorizers use api-id/authorizer-id format
+            if (resourceData && resourceData.ApiId && resourceData.AuthorizerId) {
+                return `${resourceData.ApiId}/${resourceData.AuthorizerId}`;
+            }
+            break;
+
+        case 'aws_apigatewayv2_stage':
+            // API Gateway V2 stages use api-id/stage-name format
+            if (resourceData && resourceData.ApiId && resourceData.StageName) {
+                return `${resourceData.ApiId}/${resourceData.StageName}`;
+            }
+            break;
+
+        case 'aws_apigatewayv2_api_mapping':
+            // API Gateway V2 API mappings use api-mapping-id/domain-name format
+            if (resourceData && resourceData.ApiMappingId && resourceData.DomainName) {
+                return `${resourceData.ApiMappingId}/${resourceData.DomainName}`;
+            }
+            break;
+
+        // KMS Resources - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/kms_alias
+        case 'aws_kms_alias':
+            // KMS aliases use alias name
+            if (resourceData && resourceData.AliasName) {
+                return resourceData.AliasName;
+            }
+            break;
+
+        case 'aws_kms_grant':
+            // KMS grants use key-id:grant-id format
+            if (resourceData && resourceData.KeyId && resourceData.GrantId) {
+                return `${resourceData.KeyId}:${resourceData.GrantId}`;
+            }
+            break;
+
+        // Organizations Resources - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/organizations_policy_attachment
+        case 'aws_organizations_policy_attachment':
+            // Organizations policy attachments use policy-id:target-id format
+            if (resourceData && resourceData.PolicyId && resourceData.TargetId) {
+                return `${resourceData.PolicyId}:${resourceData.TargetId}`;
+            }
+            break;
+
+        // SSM Resources - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/ssm_patch_group
+        case 'aws_ssm_patch_group':
+            // SSM patch groups use patch-group-name:baseline-id format
+            if (resourceData && resourceData.PatchGroup && resourceData.BaselineId) {
+                return `${resourceData.PatchGroup}:${resourceData.BaselineId}`;
+            }
+            break;
+
+        case 'aws_ssm_maintenance_window_target':
+            // SSM maintenance window targets use window-id:target-id format
+            if (resourceData && resourceData.WindowId && resourceData.WindowTargetId) {
+                return `${resourceData.WindowId}:${resourceData.WindowTargetId}`;
+            }
+            break;
+
+        case 'aws_ssm_maintenance_window_task':
+            // SSM maintenance window tasks use window-id:task-id format
+            if (resourceData && resourceData.WindowId && resourceData.WindowTaskId) {
+                return `${resourceData.WindowId}:${resourceData.WindowTaskId}`;
+            }
+            break;
+
+        // Config Resources - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/config_remediation_configuration
+        case 'aws_config_remediation_configuration':
+            // Config remediation configurations use config-rule-name format
+            if (resourceData && resourceData.ConfigRuleName) {
+                return resourceData.ConfigRuleName;
+            }
+            break;
+
+        // GuardDuty Resources - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/guardduty_member
+        case 'aws_guardduty_member':
+            // GuardDuty members use detector-id:account-id format
+            if (resourceData && resourceData.DetectorId && resourceData.AccountId) {
+                return `${resourceData.DetectorId}:${resourceData.AccountId}`;
+            }
+            break;
+
+        case 'aws_guardduty_ipset':
+            // GuardDuty IPSets use detector-id:ipset-id format
+            if (resourceData && resourceData.DetectorId && resourceData.IpsetId) {
+                return `${resourceData.DetectorId}:${resourceData.IpsetId}`;
+            }
+            break;
+
+        case 'aws_guardduty_threatintelset':
+            // GuardDuty threat intel sets use detector-id:threatintelset-id format
+            if (resourceData && resourceData.DetectorId && resourceData.ThreatintelsetId) {
+                return `${resourceData.DetectorId}:${resourceData.ThreatintelsetId}`;
+            }
+            break;
+
+        // Backup Resources - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/backup_selection
+        case 'aws_backup_selection':
+            // Backup selections use plan-id:selection-id format
+            if (resourceData && resourceData.BackupPlanId && resourceData.SelectionId) {
+                return `${resourceData.BackupPlanId}:${resourceData.SelectionId}`;
+            }
+            break;
+
+        case 'aws_backup_vault_policy':
+            // Backup vault policies use vault name
+            if (resourceData && resourceData.BackupVaultName) {
+                return resourceData.BackupVaultName;
+            }
+            break;
+
+        case 'aws_backup_vault_notifications':
+            // Backup vault notifications use vault name
+            if (resourceData && resourceData.BackupVaultName) {
+                return resourceData.BackupVaultName;
+            }
+            break;
+
+        // Most resources use their physical ID directly
+        case 'aws_vpc':
+        case 'aws_subnet':
+        case 'aws_internet_gateway':
+        case 'aws_nat_gateway':
+        case 'aws_route_table':
+        case 'aws_security_group':
+        case 'aws_network_acl':
+        case 'aws_vpc_dhcp_options':
+        case 'aws_instance':
+        case 'aws_ami':
+        case 'aws_ebs_volume':
+        case 'aws_ebs_snapshot':
+        case 'aws_eip':
+        case 'aws_network_interface':
+        case 'aws_key_pair':
+        case 'aws_launch_template':
+        case 'aws_launch_configuration':
+        case 'aws_placement_group':
+        case 'aws_ec2_transit_gateway':
+        case 'aws_ec2_transit_gateway_route_table':
+        case 'aws_ec2_transit_gateway_vpc_attachment':
+        case 'aws_lb':
+        case 'aws_alb':
+        case 'aws_elb':
+        case 'aws_lb_target_group':
+        case 'aws_alb_target_group':
+        case 'aws_lb_listener':
+        case 'aws_alb_listener':
+        case 'aws_iam_role':
+        case 'aws_iam_user':
+        case 'aws_iam_group':
+        case 'aws_iam_policy':
+        case 'aws_s3_bucket':
+        case 'aws_db_instance':
+        case 'aws_rds_cluster':
+        case 'aws_lambda_function':
+        case 'aws_lambda_layer_version':
+        case 'aws_api_gateway_rest_api':
+        case 'aws_cloudformation_stack':
+        case 'aws_cloudformation_stack_set':
+        case 'aws_autoscaling_group':
+        case 'aws_autoscaling_policy':
+        case 'aws_cloudwatch_metric_alarm':
+        case 'aws_cloudwatch_log_group':
+        case 'aws_sns_topic':
+        case 'aws_sqs_queue':
+        case 'aws_dynamodb_table':
+        case 'aws_elasticsearch_domain':
+        case 'aws_ecs_cluster':
+        case 'aws_ecs_service':
+        case 'aws_ecs_task_definition':
+        case 'aws_ecr_repository':
+        case 'aws_eks_cluster':
+        case 'aws_efs_file_system':
+        case 'aws_batch_compute_environment':
+        case 'aws_batch_job_queue':
+        case 'aws_batch_job_definition':
+        case 'aws_cognito_user_pool':
+        case 'aws_cognito_identity_pool':
+        case 'aws_kms_key':
+        case 'aws_secretsmanager_secret':
+        // Additional simple ID resources (using resource ID/ARN directly)
+        case 'aws_acm_certificate':
+        case 'aws_acm_certificate_validation':
+        case 'aws_acmpca_certificate_authority':
+        case 'aws_api_gateway_account':
+        case 'aws_api_gateway_api_key':
+        case 'aws_api_gateway_client_certificate':
+        case 'aws_api_gateway_deployment':
+        case 'aws_api_gateway_documentation_part':
+        case 'aws_api_gateway_documentation_version':
+        case 'aws_api_gateway_domain_name':
+        case 'aws_api_gateway_gateway_response':
+        case 'aws_api_gateway_model':
+        case 'aws_api_gateway_request_validator':
+        case 'aws_api_gateway_stage':
+        case 'aws_api_gateway_usage_plan':
+        case 'aws_api_gateway_usage_plan_key':
+        case 'aws_apigatewayv2_api':
+        case 'aws_apigatewayv2_domain_name':
+        case 'aws_apigatewayv2_vpc_link':
+        case 'aws_appautoscaling_policy':
+        case 'aws_appautoscaling_scheduled_action':
+        case 'aws_appautoscaling_target':
+        case 'aws_appmesh_mesh':
+        case 'aws_appmesh_route':
+        case 'aws_appmesh_virtual_node':
+        case 'aws_appmesh_virtual_router':
+        case 'aws_appmesh_virtual_service':
+        case 'aws_appmesh_gateway_route':
+        case 'aws_appmesh_virtual_gateway':
+        case 'aws_appsync_datasource':
+        case 'aws_appsync_function':
+        case 'aws_appsync_graphql_api':
+        case 'aws_appsync_api_key':
+        case 'aws_appsync_resolver':
+        case 'aws_athena_database':
+        case 'aws_athena_named_query':
+        case 'aws_athena_workgroup':
+        case 'aws_autoscaling_schedule':
+        case 'aws_autoscalingplans_scaling_plan':
+        case 'aws_backup_plan':
+        case 'aws_backup_vault':
+        case 'aws_backup_region_settings':
+        case 'aws_cloud9_environment_ec2':
+        case 'aws_cloudhsm_v2_cluster':
+        case 'aws_cloudhsm_v2_hsm':
+        case 'aws_cloudwatch_dashboard':
+        case 'aws_cloudwatch_event_permission':
+        case 'aws_cloudwatch_event_rule':
+        case 'aws_cloudwatch_event_bus':
+        case 'aws_cloudwatch_log_destination':
+        case 'aws_cloudwatch_log_destination_policy':
+        case 'aws_cloudwatch_log_resource_policy':
+        case 'aws_cloudwatch_log_stream':
+        case 'aws_cur_report_definition':
+        case 'aws_datapipeline_pipeline':
+        case 'aws_dax_cluster':
+        case 'aws_dax_parameter_group':
+        case 'aws_dax_subnet_group':
+        case 'aws_devicefarm_project':
+        case 'aws_directory_service_directory':
+        case 'aws_directory_service_conditional_forwarder':
+        case 'aws_directory_service_log_subscription':
+        case 'aws_docdb_cluster':
+        case 'aws_docdb_cluster_instance':
+        case 'aws_docdb_cluster_parameter_group':
+        case 'aws_docdb_cluster_snapshot':
+        case 'aws_docdb_subnet_group':
+        case 'aws_dx_bgp_peer':
+        case 'aws_dx_connection':
+        case 'aws_dx_connection_association':
+        case 'aws_dx_gateway':
+        case 'aws_dx_gateway_association':
+        case 'aws_dx_gateway_association_proposal':
+        case 'aws_dx_hosted_private_virtual_interface':
+        case 'aws_dx_hosted_private_virtual_interface_accepter':
+        case 'aws_dx_hosted_public_virtual_interface':
+        case 'aws_dx_hosted_public_virtual_interface_accepter':
+        case 'aws_dx_hosted_transit_virtual_interface':
+        case 'aws_dx_hosted_transit_virtual_interface_accepter':
+        case 'aws_dx_lag':
+        case 'aws_dx_private_virtual_interface':
+        case 'aws_dx_public_virtual_interface':
+        case 'aws_dx_transit_virtual_interface':
+        case 'aws_ami_copy':
+        case 'aws_ami_from_instance':
+        case 'aws_ebs_default_kms_key':
+        case 'aws_ebs_encryption_by_default':
+        case 'aws_ebs_snapshot_copy':
+        case 'aws_ec2_capacity_reservation':
+        case 'aws_ec2_client_vpn_endpoint':
+        case 'aws_ec2_client_vpn_network_association':
+        case 'aws_ec2_client_vpn_authorization_rule':
+        case 'aws_ec2_client_vpn_route':
+        case 'aws_ec2_fleet':
+        case 'aws_ec2_transit_gateway_peering_attachment':
+        case 'aws_ec2_transit_gateway_peering_attachment_accepter':
+        case 'aws_ec2_availability_zone_group':
+        case 'aws_ec2_local_gateway_route':
+        case 'aws_ec2_local_gateway_route_table_vpc_association':
+        case 'aws_ec2_managed_prefix_list':
+        case 'aws_ec2_tag':
+        case 'aws_ec2_traffic_mirror_filter':
+        case 'aws_ec2_traffic_mirror_filter_rule':
+        case 'aws_ec2_traffic_mirror_session':
+        case 'aws_ec2_traffic_mirror_target':
+        case 'aws_ec2_carrier_gateway':
+        case 'aws_snapshot_create_volume_permission':
+        case 'aws_spot_datafeed_subscription':
+        case 'aws_spot_fleet_request':
+        case 'aws_spot_instance_request':
+        case 'aws_elastic_beanstalk_application':
+        case 'aws_elastic_beanstalk_environment':
+        case 'aws_emr_cluster':
+        case 'aws_emr_security_configuration':
+        case 'aws_elasticache_cluster':
+        case 'aws_elasticache_replication_group':
+        case 'aws_elastictranscoder_pipeline':
+        case 'aws_elastictranscoder_preset':
+        case 'aws_app_cookie_stickiness_policy':
+        case 'aws_lb_cookie_stickiness_policy':
+        case 'aws_lb_ssl_negotiation_policy':
+        case 'aws_proxy_protocol_policy':
+        case 'aws_lb_listener_rule':
+        case 'aws_gamelift_alias':
+        case 'aws_gamelift_build':
+        case 'aws_gamelift_fleet':
+        case 'aws_gamelift_game_session_queue':
+        case 'aws_glacier_vault':
+        case 'aws_glacier_vault_lock':
+        case 'aws_globalaccelerator_accelerator':
+        case 'aws_globalaccelerator_endpoint_group':
+        case 'aws_globalaccelerator_listener':
+        case 'aws_glue_catalog_database':
+        case 'aws_glue_connection':
+        case 'aws_glue_crawler':
+        case 'aws_glue_job':
+        case 'aws_glue_trigger':
+        case 'aws_glue_workflow':
+        case 'aws_glue_classifier':
+        case 'aws_glue_security_configuration':
+        case 'aws_glue_ml_transform':
+        case 'aws_glue_dev_endpoint':
+        case 'aws_guardduty_detector':
+        case 'aws_guardduty_invite_accepter':
+        case 'aws_guardduty_filter':
+        case 'aws_guardduty_organization_admin_account':
+        case 'aws_guardduty_organization_configuration':
+        case 'aws_guardduty_publishing_destination':
+        case 'aws_iam_access_key':
+        case 'aws_iam_account_alias':
+        case 'aws_iam_account_password_policy':
+        case 'aws_iam_openid_connect_provider':
+        case 'aws_iam_policy_attachment':
+        case 'aws_iam_role_policy':
+        case 'aws_iam_user_policy':
+        case 'aws_iam_group_policy':
+        case 'aws_iam_saml_provider':
+        case 'aws_iam_server_certificate':
+        case 'aws_iam_user_login_profile':
+        case 'aws_iam_user_ssh_key':
+        case 'aws_imagebuilder_component':
+        case 'aws_imagebuilder_distribution_configuration':
+        case 'aws_imagebuilder_image_pipeline':
+        case 'aws_imagebuilder_image_recipe':
+        case 'aws_imagebuilder_infrastructure_configuration':
+        case 'aws_inspector_assessment_target':
+        case 'aws_inspector_assessment_template':
+        case 'aws_inspector_resource_group':
+        case 'aws_iot_certificate':
+        case 'aws_iot_policy':
+        case 'aws_iot_topic_rule':
+        case 'aws_iot_thing':
+        case 'aws_iot_thing_type':
+        case 'aws_iot_role_alias':
+        case 'aws_kms_external_key':
+        case 'aws_kms_ciphertext':
+        case 'aws_kinesis_analytics_application':
+        case 'aws_kinesisanalyticsv2_application':
+        case 'aws_kinesis_firehose_delivery_stream':
+        case 'aws_kinesis_stream':
+        case 'aws_kinesis_video_stream':
+        case 'aws_lambda_code_signing_config':
+        case 'aws_lakeformation_data_lake_settings':
+        case 'aws_lakeformation_permissions':
+        case 'aws_lakeformation_resource':
+        case 'aws_lex_bot':
+        case 'aws_lex_bot_alias':
+        case 'aws_lex_intent':
+        case 'aws_lex_slot_type':
+        case 'aws_licensemanager_association':
+        case 'aws_licensemanager_license_configuration':
+        case 'aws_lightsail_domain':
+        case 'aws_lightsail_instance':
+        case 'aws_lightsail_key_pair':
+        case 'aws_lightsail_static_ip':
+        case 'aws_lightsail_static_ip_attachment':
+        case 'aws_macie_member_account_association':
+        case 'aws_macie_s3_bucket_association':
+        case 'aws_media_convert_queue':
+        case 'aws_media_package_channel':
+        case 'aws_media_store_container':
+        case 'aws_media_store_container_policy':
+        case 'aws_mq_broker':
+        case 'aws_mq_configuration':
+        case 'aws_msk_cluster':
+        case 'aws_msk_configuration':
+        case 'aws_msk_scram_secret_association':
+        case 'aws_neptune_parameter_group':
+        case 'aws_neptune_subnet_group':
+        case 'aws_neptune_cluster_parameter_group':
+        case 'aws_neptune_cluster':
+        case 'aws_neptune_cluster_instance':
+        case 'aws_neptune_cluster_snapshot':
+        case 'aws_neptune_event_subscription':
+        case 'aws_networkfirewall_firewall':
+        case 'aws_networkfirewall_firewall_policy':
+        case 'aws_networkfirewall_logging_configuration':
+        case 'aws_networkfirewall_rule_group':
+        case 'aws_networkfirewall_resource_policy':
+        case 'aws_opsworks_application':
+        case 'aws_opsworks_custom_layer':
+        case 'aws_opsworks_ganglia_layer':
+        case 'aws_opsworks_haproxy_layer':
+        case 'aws_opsworks_instance':
+        case 'aws_opsworks_java_app_layer':
+        case 'aws_opsworks_memcached_layer':
+        case 'aws_opsworks_mysql_layer':
+        case 'aws_opsworks_nodejs_app_layer':
+        case 'aws_opsworks_permission':
+        case 'aws_opsworks_php_app_layer':
+        case 'aws_opsworks_rails_app_layer':
+        case 'aws_opsworks_rds_db_instance':
+        case 'aws_opsworks_stack':
+        case 'aws_opsworks_static_web_layer':
+        case 'aws_opsworks_user_profile':
+        case 'aws_organizations_account':
+        case 'aws_organizations_organization':
+        case 'aws_organizations_organizational_unit':
+        case 'aws_organizations_policy':
+        case 'aws_pinpoint_app':
+        case 'aws_pinpoint_adm_channel':
+        case 'aws_pinpoint_apns_channel':
+        case 'aws_pinpoint_apns_sandbox_channel':
+        case 'aws_pinpoint_apns_voip_channel':
+        case 'aws_pinpoint_apns_voip_sandbox_channel':
+        case 'aws_pinpoint_baidu_channel':
+        case 'aws_pinpoint_email_channel':
+        case 'aws_pinpoint_event_stream':
+        case 'aws_pinpoint_gcm_channel':
+        case 'aws_pinpoint_sms_channel':
+        case 'aws_qldb_ledger':
+        case 'aws_quicksight_group':
+        case 'aws_quicksight_user':
+        case 'aws_ram_principal_association':
+        case 'aws_ram_resource_association':
+        case 'aws_ram_resource_share':
+        case 'aws_ram_resource_share_accepter':
+        case 'aws_db_cluster_snapshot':
+        case 'aws_db_event_subscription':
+        case 'aws_db_instance_role_association':
+        case 'aws_db_security_group':
+        case 'aws_db_snapshot':
+        case 'aws_rds_cluster_endpoint':
+        case 'aws_rds_global_cluster':
+        case 'aws_db_proxy':
+        case 'aws_db_proxy_default_target_group':
+        case 'aws_db_proxy_target':
+        case 'aws_redshift_cluster':
+        case 'aws_redshift_event_subscription':
+        case 'aws_redshift_parameter_group':
+        case 'aws_redshift_security_group':
+        case 'aws_redshift_snapshot_copy_grant':
+        case 'aws_redshift_subnet_group':
+        case 'aws_redshift_snapshot_schedule':
+        case 'aws_redshift_snapshot_schedule_association':
+        case 'aws_resourcegroups_group':
+        case 'aws_route53_delegation_set':
+        case 'aws_route53_health_check':
+        case 'aws_route53_query_log':
+        case 'aws_route53_zone':
+        case 'aws_route53_resolver_endpoint':
+        case 'aws_route53_resolver_rule':
+        case 'aws_route53_resolver_query_log_config':
+        case 'aws_route53_resolver_query_log_config_association':
+        case 'aws_route53_vpc_association_authorization':
+        case 'aws_s3_account_public_access_block':
+        case 'aws_s3_bucket_analytics_configuration':
+        case 'aws_s3_bucket_public_access_block':
+        case 'aws_s3_bucket_ownership_controls':
+        case 'aws_s3_access_point':
+        case 'aws_s3control_bucket':
+        case 'aws_s3control_bucket_lifecycle_configuration':
+        case 'aws_s3control_bucket_policy':
+        case 'aws_s3outposts_endpoint':
+        case 'aws_sagemaker_endpoint':
+        case 'aws_sagemaker_endpoint_configuration':
+        case 'aws_sagemaker_model':
+        case 'aws_sagemaker_notebook_instance':
+        case 'aws_sagemaker_notebook_instance_lifecycle_configuration':
+        case 'aws_sagemaker_code_repository':
+        case 'aws_securityhub_account':
+        case 'aws_securityhub_product_subscription':
+        case 'aws_securityhub_standards_subscription':
+        case 'aws_securityhub_member':
+        case 'aws_securityhub_action_target':
+        case 'aws_servicecatalog_portfolio':
+        case 'aws_service_discovery_http_namespace':
+        case 'aws_service_discovery_private_dns_namespace':
+        case 'aws_service_discovery_public_dns_namespace':
+        case 'aws_service_discovery_service':
+        case 'aws_servicequotas_service_quota':
+        case 'aws_serverlessrepository_stack':
+        case 'aws_ses_configuration_set':
+        case 'aws_ses_receipt_rule_set':
+        case 'aws_ses_receipt_filter':
+        case 'aws_ses_domain_identity':
+        case 'aws_ses_domain_identity_verification':
+        case 'aws_ses_domain_dkim':
+        case 'aws_ses_domain_mail_from':
+        case 'aws_ses_email_identity':
+        case 'aws_ses_template':
+        case 'aws_shield_protection':
+        case 'aws_signer_signing_job':
+        case 'aws_signer_signing_profile':
+        case 'aws_signer_signing_profile_permission':
+        case 'aws_simpledb_domain':
+        case 'aws_sns_platform_application':
+        case 'aws_sns_sms_preferences':
+        case 'aws_ssm_activation':
+        case 'aws_ssm_association':
+        case 'aws_ssm_document':
+        case 'aws_ssm_maintenance_window':
+        case 'aws_ssm_patch_baseline':
+        case 'aws_ssm_parameter':
+        case 'aws_ssm_resource_data_sync':
+        case 'aws_config_configuration_recorder':
+        case 'aws_config_delivery_channel':
+        case 'aws_config_config_rule':
+        case 'aws_config_configuration_aggregator':
+        case 'aws_config_organization_custom_rule':
+        case 'aws_config_organization_managed_rule':
+        case 'aws_codebuild_project':
+        case 'aws_codebuild_source_credential':
+        case 'aws_codebuild_report_group':
+        case 'aws_codecommit_repository':
+        case 'aws_codedeploy_app':
+        case 'aws_codedeploy_deployment_config':
+        case 'aws_codepipeline':
+        case 'aws_codepipeline_webhook':
+        case 'aws_cloudtrail':
+        case 'aws_cloudfront_distribution':
+        case 'aws_cloudfront_origin_access_identity':
+        case 'aws_cloudfront_public_key':
+        case 'aws_datasync_agent':
+        case 'aws_datasync_task':
+        case 'aws_datasync_location_efs':
+        case 'aws_datasync_location_fsx_windows':
+        case 'aws_datasync_location_nfs':
+        case 'aws_datasync_location_s3':
+        case 'aws_datasync_location_smb':
+        case 'aws_dlm_lifecycle_policy':
+        case 'aws_dms_certificate':
+        case 'aws_dms_endpoint':
+        case 'aws_dms_event_subscription':
+        case 'aws_dms_replication_instance':
+        case 'aws_dms_replication_subnet_group':
+        case 'aws_dms_replication_task':
+        case 'aws_efs_access_point':
+        case 'aws_efs_mount_target':
+        case 'aws_efs_file_system_policy':
+        case 'aws_elasticsearch_domain_policy':
+        case 'aws_sfn_activity':
+        case 'aws_sfn_state_machine':
+        case 'aws_storagegateway_cache':
+        case 'aws_storagegateway_cached_iscsi_volume':
+        case 'aws_storagegateway_gateway':
+        case 'aws_storagegateway_nfs_file_share':
+        case 'aws_storagegateway_smb_file_share':
+        case 'aws_storagegateway_stored_iscsi_volume':
+        case 'aws_storagegateway_tape_pool':
+        case 'aws_storagegateway_upload_buffer':
+        case 'aws_storagegateway_working_storage':
+        case 'aws_swf_domain':
+        case 'aws_transfer_server':
+        case 'aws_transfer_ssh_key':
+        case 'aws_transfer_user':
+        case 'aws_customer_gateway':
+        case 'aws_egress_only_internet_gateway':
+        case 'aws_flow_log':
+        case 'aws_main_route_table_association':
+        case 'aws_network_interface_sg_attachment':
+        case 'aws_vpc_endpoint':
+        case 'aws_vpc_endpoint_connection_notification':
+        case 'aws_vpc_endpoint_service':
+        case 'aws_vpc_ipv4_cidr_block_association':
+        case 'aws_vpc_peering_connection_options':
+        case 'aws_vpn_connection':
+        case 'aws_vpn_gateway':
+        case 'aws_waf_byte_match_set':
+        case 'aws_waf_geo_match_set':
+        case 'aws_waf_ipset':
+        case 'aws_waf_rate_based_rule':
+        case 'aws_waf_regex_match_set':
+        case 'aws_waf_regex_pattern_set':
+        case 'aws_waf_rule':
+        case 'aws_waf_rule_group':
+        case 'aws_waf_size_constraint_set':
+        case 'aws_waf_sql_injection_match_set':
+        case 'aws_waf_web_acl':
+        case 'aws_waf_xss_match_set':
+        case 'aws_wafregional_byte_match_set':
+        case 'aws_wafregional_geo_match_set':
+        case 'aws_wafregional_ipset':
+        case 'aws_wafregional_rate_based_rule':
+        case 'aws_wafregional_regex_match_set':
+        case 'aws_wafregional_regex_pattern_set':
+        case 'aws_wafregional_rule':
+        case 'aws_wafregional_rule_group':
+        case 'aws_wafregional_size_constraint_set':
+        case 'aws_wafregional_sql_injection_match_set':
+        case 'aws_wafregional_web_acl':
+        case 'aws_wafregional_xss_match_set':
+        case 'aws_wafv2_ip_set':
+        case 'aws_wafv2_regex_pattern_set':
+        case 'aws_wafv2_rule_group':
+        case 'aws_wafv2_web_acl':
+        case 'aws_wafv2_web_acl_association':
+        case 'aws_wafv2_web_acl_logging_configuration':
+        case 'aws_worklink_fleet':
+        case 'aws_worklink_website_certificate_authority_association':
+        case 'aws_workspaces_directory':
+        case 'aws_workspaces_ip_group':
+        case 'aws_workspaces_workspace':
+        case 'aws_xray_encryption_config':
+        case 'aws_xray_group':
+        case 'aws_xray_sampling_rule':
+        case 'aws_budgets_budget':
+        case 'aws_fsx_lustre_file_system':
+        case 'aws_fsx_windows_file_system':
+        case 'aws_fms_admin_account':
+        case 'aws_accessanalyzer_analyzer':
+        case 'aws_ecs_capacity_provider':
+        case 'aws_codeartifact_domain':
+        case 'aws_codeartifact_domain_permissions':
+        case 'aws_codeartifact_repository':
+        case 'aws_codeartifact_repository_permissions_policy':
+        case 'aws_codestarconnections_connection':
+        case 'aws_codestarnotifications_notification_rule':
+        
+        // ElastiCache Additional Resources
+        case 'aws_elasticache_replication_group':
+            // ElastiCache replication groups use replication group ID
+            if (resourceData && resourceData.ReplicationGroupId) {
+                return resourceData.ReplicationGroupId;
+            }
+            break;
+
+        // Elastic Beanstalk Resources - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/elastic_beanstalk_application_version
+        case 'aws_elastic_beanstalk_application_version':
+            // Elastic Beanstalk application versions use application-name/version-label format
+            if (resourceData && resourceData.Application && resourceData.Name) {
+                return `${resourceData.Application}/${resourceData.Name}`;
+            }
+            break;
+
+        case 'aws_elastic_beanstalk_configuration_template':
+            // Elastic Beanstalk configuration templates use application-name:template-name format
+            if (resourceData && resourceData.Application && resourceData.Name) {
+                return `${resourceData.Application}:${resourceData.Name}`;
+            }
+            break;
+
+        // EMR Resources - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/emr_instance_group
+        case 'aws_emr_instance_group':
+            // EMR instance groups use cluster-id/instance-group-id format
+            if (resourceData && resourceData.ClusterId && resourceData.Id) {
+                return `${resourceData.ClusterId}/${resourceData.Id}`;
+            }
+            break;
+
+        case 'aws_emr_instance_fleet':
+            // EMR instance fleets use cluster-id/fleet-id format
+            if (resourceData && resourceData.ClusterId && resourceData.Id) {
+                return `${resourceData.ClusterId}/${resourceData.Id}`;
+            }
+            break;
+
+        case 'aws_emr_managed_scaling_policy':
+            // EMR managed scaling policies use cluster ID
+            if (resourceData && resourceData.ClusterId) {
+                return resourceData.ClusterId;
+            }
+            break;
+
+        // EKS Resources - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/eks_node_group
+        case 'aws_eks_node_group':
+            // EKS node groups use cluster-name:node-group-name format
+            if (resourceData && resourceData.ClusterName && resourceData.NodeGroupName) {
+                return `${resourceData.ClusterName}:${resourceData.NodeGroupName}`;
+            }
+            break;
+
+        case 'aws_eks_fargate_profile':
+            // EKS Fargate profiles use cluster-name:profile-name format
+            if (resourceData && resourceData.ClusterName && resourceData.FargateProfileName) {
+                return `${resourceData.ClusterName}:${resourceData.FargateProfileName}`;
+            }
+            break;
+
+        // Glue Resources - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/glue_catalog_table
+        case 'aws_glue_catalog_table':
+            // Glue catalog tables use catalog-id:database-name:table-name format
+            if (resourceData && resourceData.DatabaseName && resourceData.Name) {
+                var catalogId = resourceData.CatalogId || '';
+                return `${catalogId}:${resourceData.DatabaseName}:${resourceData.Name}`;
+            }
+            break;
+
+        case 'aws_glue_partition':
+            // Glue partitions use catalog-id:database-name:table-name:partition-values format
+            if (resourceData && resourceData.DatabaseName && resourceData.TableName && resourceData.PartitionValues) {
+                var catalogId = resourceData.CatalogId || '';
+                return `${catalogId}:${resourceData.DatabaseName}:${resourceData.TableName}:${resourceData.PartitionValues.join(',')}`;
+            }
+            break;
+
+        case 'aws_glue_user_defined_function':
+            // Glue UDFs use catalog-id:database-name:function-name format
+            if (resourceData && resourceData.DatabaseName && resourceData.FunctionName) {
+                var catalogId = resourceData.CatalogId || '';
+                return `${catalogId}:${resourceData.DatabaseName}:${resourceData.FunctionName}`;
+            }
+            break;
+
+        case 'aws_glue_data_catalog_encryption_settings':
+            // Glue data catalog encryption settings use catalog ID
+            if (resourceData && resourceData.CatalogId) {
+                return resourceData.CatalogId;
+            }
+            break;
+
+        case 'aws_glue_resource_policy':
+            // Glue resource policies use enable flag or similar identifier
+            return 'enable';
+
+        case 'aws_glue_schema':
+            // Glue schemas use registry-name/schema-name format
+            if (resourceData && resourceData.RegistryArn && resourceData.SchemaName) {
+                var registryName = resourceData.RegistryArn.split('/').pop();
+                return `${registryName}/${resourceData.SchemaName}`;
+            }
+            break;
+
+        // Lambda Additional Resources - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lambda_alias
+        case 'aws_lambda_alias':
+            // Lambda aliases use function-name:alias-name format
+            if (resourceData && resourceData.FunctionName && resourceData.Name) {
+                return `${resourceData.FunctionName}:${resourceData.Name}`;
+            }
+            break;
+
+        case 'aws_lambda_function_event_invoke_config':
+            // Lambda function event invoke configs use function name and optional qualifier
+            if (resourceData && resourceData.FunctionName) {
+                var qualifier = resourceData.Qualifier || '';
+                return qualifier ? `${resourceData.FunctionName}:${qualifier}` : resourceData.FunctionName;
+            }
+            break;
+
+        case 'aws_lambda_provisioned_concurrency_config':
+            // Lambda provisioned concurrency configs use function-name:qualifier format
+            if (resourceData && resourceData.FunctionName && resourceData.Qualifier) {
+                return `${resourceData.FunctionName}:${resourceData.Qualifier}`;
+            }
+            break;
+
+        // SES Resources - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/ses_receipt_rule
+        case 'aws_ses_receipt_rule':
+            // SES receipt rules use rule-set-name:rule-name format
+            if (resourceData && resourceData.RuleSetName && resourceData.Name) {
+                return `${resourceData.RuleSetName}:${resourceData.Name}`;
+            }
+            break;
+
+        case 'aws_ses_active_receipt_rule_set':
+            // SES active receipt rule sets use rule set name
+            if (resourceData && resourceData.RuleSetName) {
+                return resourceData.RuleSetName;
+            }
+            break;
+
+        case 'aws_ses_event_destination':
+            // SES event destinations use configuration-set-name:destination-name format
+            if (resourceData && resourceData.ConfigurationSetName && resourceData.Name) {
+                return `${resourceData.ConfigurationSetName}:${resourceData.Name}`;
+            }
+            break;
+
+        case 'aws_ses_identity_notification_topic':
+            // SES identity notification topics use identity:notification-type format
+            if (resourceData && resourceData.Identity && resourceData.NotificationType) {
+                return `${resourceData.Identity}:${resourceData.NotificationType}`;
+            }
+            break;
+
+        case 'aws_ses_identity_policy':
+            // SES identity policies use identity:policy-name format
+            if (resourceData && resourceData.Identity && resourceData.Name) {
+                return `${resourceData.Identity}:${resourceData.Name}`;
+            }
+            break;
+
+        // CodeCommit Resources - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/codecommit_trigger
+        case 'aws_codecommit_trigger':
+            // CodeCommit triggers use repository-name format
+            if (resourceData && resourceData.RepositoryName) {
+                return resourceData.RepositoryName;
+            }
+            break;
+
+        // CodeBuild Resources - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/codebuild_webhook
+        case 'aws_codebuild_webhook':
+            // CodeBuild webhooks use project name
+            if (resourceData && resourceData.ProjectName) {
+                return resourceData.ProjectName;
+            }
+            break;
+
+        // CodeDeploy Resources - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/codedeploy_deployment_group
+        case 'aws_codedeploy_deployment_group':
+            // CodeDeploy deployment groups use application-name:deployment-group-name format
+            if (resourceData && resourceData.ApplicationName && resourceData.DeploymentGroupName) {
+                return `${resourceData.ApplicationName}:${resourceData.DeploymentGroupName}`;
+            }
+            break;
+
+        // Cognito Resources - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/cognito_user_pool_client
+        case 'aws_cognito_user_pool_client':
+            // Cognito user pool clients use user-pool-id/client-id format
+            if (resourceData && resourceData.UserPoolId && resourceData.ClientId) {
+                return `${resourceData.UserPoolId}/${resourceData.ClientId}`;
+            }
+            break;
+
+        case 'aws_cognito_user_pool_domain':
+            // Cognito user pool domains use domain name
+            if (resourceData && resourceData.Domain) {
+                return resourceData.Domain;
+            }
+            break;
+
+        case 'aws_cognito_user_group':
+            // Cognito user groups use user-pool-id/group-name format
+            if (resourceData && resourceData.UserPoolId && resourceData.Name) {
+                return `${resourceData.UserPoolId}/${resourceData.Name}`;
+            }
+            break;
+
+        case 'aws_cognito_identity_provider':
+            // Cognito identity providers use user-pool-id:provider-name format
+            if (resourceData && resourceData.UserPoolId && resourceData.ProviderName) {
+                return `${resourceData.UserPoolId}:${resourceData.ProviderName}`;
+            }
+            break;
+
+        case 'aws_cognito_resource_server':
+            // Cognito resource servers use user-pool-id/identifier format
+            if (resourceData && resourceData.UserPoolId && resourceData.Identifier) {
+                return `${resourceData.UserPoolId}/${resourceData.Identifier}`;
+            }
+            break;
+
+        case 'aws_cognito_identity_pool_roles_attachment':
+            // Cognito identity pool roles attachments use identity pool ID
+            if (resourceData && resourceData.IdentityPoolId) {
+                return resourceData.IdentityPoolId;
+            }
+            break;
+
+        // Config Additional Resources - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/config_configuration_recorder_status
+        case 'aws_config_configuration_recorder_status':
+            // Config configuration recorder status uses recorder name
+            if (resourceData && resourceData.Name) {
+                return resourceData.Name;
+            }
+            break;
+
+        case 'aws_config_aggregate_authorization':
+            // Config aggregate authorizations use account-id:region format
+            if (resourceData && resourceData.AccountId && resourceData.Region) {
+                return `${resourceData.AccountId}:${resourceData.Region}`;
+            }
+            break;
+
+        // IoT Resources - https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iot_policy_attachment
+        case 'aws_iot_policy_attachment':
+            // IoT policy attachments use target:policy-name format
+            if (resourceData && resourceData.Target && resourceData.PolicyName) {
+                return `${resourceData.Target}:${resourceData.PolicyName}`;
+            }
+            break;
+
+        case 'aws_iot_thing_principal_attachment':
+            // IoT thing principal attachments use thing-name/principal format
+            if (resourceData && resourceData.ThingName && resourceData.Principal) {
+                return `${resourceData.ThingName}/${resourceData.Principal}`;
+            }
+            break;
+
+        // Additional API Gateway Resources
+        case 'aws_api_gateway_method_settings':
+            // API Gateway method settings use rest-api-id/stage-name/method-path format
+            if (resourceData && resourceData.RestApiId && resourceData.StageName && resourceData.MethodPath) {
+                return `${resourceData.RestApiId}/${resourceData.StageName}/${resourceData.MethodPath}`;
+            }
+            break;
+
+        case 'aws_api_gateway_usage_plan_key':
+            // API Gateway usage plan keys use usage-plan-id/key-id format
+            if (resourceData && resourceData.UsagePlanId && resourceData.KeyId) {
+                return `${resourceData.UsagePlanId}/${resourceData.KeyId}`;
+            }
+            break;
+
+        // WAFv2 Additional Resources
+        case 'aws_wafv2_web_acl_association':
+            // WAFv2 web ACL associations use web-acl-arn,resource-arn format
+            if (resourceData && resourceData.WebAclArn && resourceData.ResourceArn) {
+                return `${resourceData.WebAclArn},${resourceData.ResourceArn}`;
+            }
+            break;
+
+        case 'aws_wafv2_web_acl_logging_configuration':
+            // WAFv2 web ACL logging configurations use web ACL ARN
+            if (resourceData && resourceData.ResourceArn) {
+                return resourceData.ResourceArn;
+            }
+            break;
+
+        // Auto Scaling Additional Resources
+        case 'aws_autoscaling_group':
+            // Auto Scaling groups use ASG name
+            if (resourceData && resourceData.AutoScalingGroupName) {
+                return resourceData.AutoScalingGroupName;
+            }
+            break;
+
+        // ECS Additional Resources  
+        case 'aws_ecs_task_definition':
+            // ECS task definitions use task definition ARN
+            if (resourceData && resourceData.TaskDefinitionArn) {
+                return resourceData.TaskDefinitionArn;
+            }
+            break;
+
+        // ElastiCache Additional Resources
+        case 'aws_elasticache_user':
+            // ElastiCache users use user ID
+            if (resourceData && resourceData.UserId) {
+                return resourceData.UserId;
+            }
+            break;
+
+        case 'aws_elasticache_user_group':
+            // ElastiCache user groups use user group ID
+            if (resourceData && resourceData.UserGroupId) {
+                return resourceData.UserGroupId;
+            }
+            break;
+
+        // App Mesh Additional Resources
+        case 'aws_appmesh_gateway_route':
+            // App Mesh gateway routes use mesh-name/virtual-gateway-name/route-name format
+            if (resourceData && resourceData.MeshName && resourceData.VirtualGatewayName && resourceData.Name) {
+                return `${resourceData.MeshName}/${resourceData.VirtualGatewayName}/${resourceData.Name}`;
+            }
+            break;
+
+        case 'aws_appmesh_virtual_gateway':
+            // App Mesh virtual gateways use mesh-name/virtual-gateway-name format
+            if (resourceData && resourceData.MeshName && resourceData.Name) {
+                return `${resourceData.MeshName}/${resourceData.Name}`;
+            }
+            break;
+
+        // Service Catalog Additional Resources
+        case 'aws_servicecatalog_portfolio_share':
+            // Service Catalog portfolio shares use portfolio-id,type,account-id format
+            if (resourceData && resourceData.PortfolioId && resourceData.Type && resourceData.PrincipalId) {
+                return `${resourceData.PortfolioId},${resourceData.Type},${resourceData.PrincipalId}`;
+            }
+            break;
+
+        case 'aws_servicecatalog_product_portfolio_association':
+            // Service Catalog product portfolio associations use accept-language:portfolio-id:product-id format
+            if (resourceData && resourceData.PortfolioId && resourceData.ProductId) {
+                var acceptLanguage = resourceData.AcceptLanguage || 'en';
+                return `${acceptLanguage}:${resourceData.PortfolioId}:${resourceData.ProductId}`;
+            }
+            break;
+
+        // Neptune Additional Resources
+        case 'aws_neptune_cluster_endpoint':
+            // Neptune cluster endpoints use cluster-id:endpoint-id format
+            if (resourceData && resourceData.ClusterIdentifier && resourceData.ClusterEndpointIdentifier) {
+                return `${resourceData.ClusterIdentifier}:${resourceData.ClusterEndpointIdentifier}`;
+            }
+            break;
+
+        // FSx Resources
+        case 'aws_fsx_backup':
+            // FSx backups use backup ID
+            if (resourceData && resourceData.BackupId) {
+                return resourceData.BackupId;
+            }
+            break;
+
+        case 'aws_fsx_data_repository_association':
+            // FSx data repository associations use association ID
+            if (resourceData && resourceData.AssociationId) {
+                return resourceData.AssociationId;
+            }
+            break;
+
+        // WorkSpaces Additional Resources
+        case 'aws_workspaces_ip_group_rule':
+            // WorkSpaces IP group rules use group-id_rule-desc format
+            if (resourceData && resourceData.GroupId && resourceData.Source) {
+                return `${resourceData.GroupId}_${resourceData.Source}`;
+            }
+            break;
+
+        case 'aws_workspaces_directory_connection':
+            // WorkSpaces directory connections use directory ID
+            if (resourceData && resourceData.DirectoryId) {
+                return resourceData.DirectoryId;
+            }
+            break;
+
+        // Global Accelerator Additional Resources
+        case 'aws_globalaccelerator_endpoint_group':
+            // Global Accelerator endpoint groups use endpoint group ARN
+            if (resourceData && resourceData.EndpointGroupArn) {
+                return resourceData.EndpointGroupArn;
+            }
+            break;
+
+        case 'aws_globalaccelerator_listener':
+            // Global Accelerator listeners use listener ARN
+            if (resourceData && resourceData.ListenerArn) {
+                return resourceData.ListenerArn;
+            }
+            break;
+
+        // MSK Additional Resources
+        case 'aws_msk_cluster_policy':
+            // MSK cluster policies use cluster ARN
+            if (resourceData && resourceData.ClusterArn) {
+                return resourceData.ClusterArn;
+            }
+            break;
+
+        // License Manager Additional Resources
+        case 'aws_licensemanager_grant':
+            // License Manager grants use grant ARN
+            if (resourceData && resourceData.GrantArn) {
+                return resourceData.GrantArn;
+            }
+            break;
+
+        case 'aws_licensemanager_grant_accepter':
+            // License Manager grant accepters use grant ARN
+            if (resourceData && resourceData.GrantArn) {
+                return resourceData.GrantArn;
+            }
+            break;
+
+        // DMS Additional Resources
+        case 'aws_dms_replication_subnet_group':
+            // DMS replication subnet groups use subnet group ID
+            if (resourceData && resourceData.ReplicationSubnetGroupId) {
+                return resourceData.ReplicationSubnetGroupId;
+            }
+            break;
+
+        case 'aws_dms_replication_task':
+            // DMS replication tasks use task ARN
+            if (resourceData && resourceData.ReplicationTaskArn) {
+                return resourceData.ReplicationTaskArn;
+            }
+            break;
+
+        // Network Firewall Additional Resources
+        case 'aws_networkfirewall_firewall_policy_association':
+            // Network Firewall policy associations use firewall-arn
+            if (resourceData && resourceData.FirewallArn) {
+                return resourceData.FirewallArn;
+            }
+            break;
+
+        case 'aws_networkfirewall_logging_configuration':
+            // Network Firewall logging configurations use firewall ARN
+            if (resourceData && resourceData.FirewallArn) {
+                return resourceData.FirewallArn;
+            }
+            break;
+
+        // Route53 Additional Resources
+        case 'aws_route53_vpc_association_authorization':
+            // Route53 VPC association authorizations use zone-id:vpc-id format
+            if (resourceData && resourceData.ZoneId && resourceData.VpcId) {
+                return `${resourceData.ZoneId}:${resourceData.VpcId}`;
+            }
+            break;
+
+        // AppSync Additional Resources
+        case 'aws_appsync_resolver':
+            // AppSync resolvers use api-id/type-name/field-name format
+            if (resourceData && resourceData.ApiId && resourceData.TypeName && resourceData.FieldName) {
+                return `${resourceData.ApiId}/${resourceData.TypeName}/${resourceData.FieldName}`;
+            }
+            break;
+
+        case 'aws_appsync_function':
+            // AppSync functions use api-id/function-id format
+            if (resourceData && resourceData.ApiId && resourceData.FunctionId) {
+                return `${resourceData.ApiId}/${resourceData.FunctionId}`;
+            }
+            break;
+
+        case 'aws_appsync_datasource':
+            // AppSync datasources use api-id/datasource-name format
+            if (resourceData && resourceData.ApiId && resourceData.Name) {
+                return `${resourceData.ApiId}/${resourceData.Name}`;
+            }
+            break;
+
+        // CloudWatch Additional Resources
+        case 'aws_cloudwatch_composite_alarm':
+            // CloudWatch composite alarms use alarm name
+            if (resourceData && resourceData.AlarmName) {
+                return resourceData.AlarmName;
+            }
+            break;
+
+        case 'aws_cloudwatch_insight_rule':
+            // CloudWatch Insights rules use rule name
+            if (resourceData && resourceData.Name) {
+                return resourceData.Name;
+            }
+            break;
+
+        // Security Hub Additional Resources
+        case 'aws_securityhub_insight':
+            // Security Hub insights use insight ARN
+            if (resourceData && resourceData.InsightArn) {
+                return resourceData.InsightArn;
+            }
+            break;
+
+        case 'aws_securityhub_custom_action_target':
+            // Security Hub custom action targets use action target ARN
+            if (resourceData && resourceData.ActionTargetArn) {
+                return resourceData.ActionTargetArn;
+            }
+            break;
+
+        // Missing Resources - Additional coverage for 100% completeness
+        case 'aws_api_gateway_rest_api_policy':
+            // API Gateway REST API policies use REST API ID
+            return physicalId;
+
+        case 'aws_apigatewayv2_deployment':
+            // API Gateway V2 deployments use deployment ID
+            return physicalId;
+
+        case 'aws_apigatewayv2_integration_response':
+            // API Gateway V2 integration responses use integration response ID
+            return physicalId;
+
+        case 'aws_apigatewayv2_model':
+            // API Gateway V2 models use model ID
+            return physicalId;
+
+        case 'aws_apigatewayv2_route_response':
+            // API Gateway V2 route responses use route response ID
+            return physicalId;
+
+        case 'aws_rds_cluster_parameter_group':
+            // RDS cluster parameter groups use parameter group name
+            if (resourceData && resourceData.DBClusterParameterGroupName) {
+                return resourceData.DBClusterParameterGroupName;
+            }
+            return physicalId;
+
+        default:
+            // Default to using the physical ID directly
+            return physicalId;
+    }
+    
+    // Fallback to physical ID if we can't determine the correct format
+    return physicalId;
+}
+
 function outputMapTf(index, service, type, options, region, was_blocked, logicalId, tracked_resources) {
     var output = '';
     var params = '';
@@ -2595,9 +4445,48 @@ function outputMapTf(index, service, type, options, region, was_blocked, logical
 `;
     }
 
-    output += `
-resource "${type}" "${logicalId}" {${params}}
+    // Check if import blocks should be included
+    var includeImportBlocks = (typeof window !== 'undefined' && window.localStorage && window.localStorage.getItem('terraformincludeimportblocks') == "true");
+    var importBlock = "";
+    
+    if (includeImportBlocks && !was_blocked) {
+        // Find the corresponding tracked resource to get the physical ID
+        var physicalId = null;
+        var resourceData = null;
+        for (var i = 0; i < tracked_resources.length; i++) {
+            if (tracked_resources[i].logicalId === logicalId) {
+                // The physical ID is stored in obj.id
+                if (tracked_resources[i].obj && tracked_resources[i].obj.id) {
+                    physicalId = tracked_resources[i].obj.id;
+                    resourceData = tracked_resources[i].obj.data;
+                }
+                break;
+            }
+        }
+        
+        if (physicalId) {
+            // Generate the correct import ID format based on resource type
+            var importId = generateTerraformImportId(type, physicalId, resourceData);
+            importBlock = `
+import {
+  to = ${type}.${logicalId}
+  id = "${importId}"
+}
 `;
+        }
+    }
+
+    if (params.trim() == "") {
+        output += `
+resource "${type}" "${logicalId}"${was_blocked ? ' # blocked' : ''} {
+}${importBlock}
+`;
+    } else {
+        output += `
+resource "${type}" "${logicalId}"${was_blocked ? ' # blocked' : ''} {${params}
+}${importBlock}
+`;
+    }
 
     return output;
 }
