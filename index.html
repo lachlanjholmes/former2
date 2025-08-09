@@ -1541,6 +1541,13 @@
                 </section>
 
                 <section id="section-outputs-tf" data-section-breadcrumb1-title="Outputs" data-section-breadcrumb1-link="#section-outputs-cloudformation" data-section-title="Terraform" class="former2-section" style="display: none;">
+                    <div class="form-group" style="padding: 20px 20px 0 20px;">
+                        <div class="checkbox-toggle">
+                            <input type="checkbox" id="terraformincludeimportblocks">
+                            <label for="terraformincludeimportblocks">Include Import Blocks</label>
+                        </div>
+                        <small class="text-muted">Generate Terraform import blocks for existing resources (requires Terraform 1.5+)</small>
+                    </div>
                     <div id='tf_container'>
                         <textarea id='tf'></textarea>
                     </div>
