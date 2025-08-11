@@ -5363,7 +5363,15 @@ service_mapping_functions.push(function(reqParams, obj, tracked_resources){
                 reqParams.tf['ipv6_cidr_block'] = obj.data.Ipv6CidrBlockAssociationSet[0].Ipv6CidrBlock;
             }
         }
-        reqParams.cfn['Tags'] = stripAWSTags(obj.data.Tags);
+        if (obj.data.Tags) {
+            reqParams.tf['tags'] = new Map();
+            obj.data.Tags.forEach(tag => {
+                if (!tag.Key.startsWith("aws:")) {
+                    reqParams.tf['tags'].set(tag['Key'], tag['Value']);
+                }
+            });
+            reqParams.cfn['Tags'] = stripAWSTags(obj.data.Tags);
+        }
 
         tracked_resources.push({
             'obj': obj,
@@ -5503,9 +5511,19 @@ service_mapping_functions.push(function(reqParams, obj, tracked_resources){
         reqParams.cfn['RouteTableId'] = obj.data.RouteTableId;
         reqParams.tf['route_table_id'] = obj.data.RouteTableId;
         reqParams.cfn['CarrierGatewayId'] = obj.data.CarrierGatewayId;
+        reqParams.tf['carrier_gateway_id'] = obj.data.CarrierGatewayId;
         reqParams.cfn['VpcEndpointId'] = obj.data.VpcEndpointId;
+        reqParams.tf['vpc_endpoint_id'] = obj.data.VpcEndpointId;
         reqParams.cfn['TransitGatewayId'] = obj.data.TransitGatewayId;
-
+        reqParams.tf['transit_gateway_id'] = obj.data.TransitGatewayId;
+        reqParams.cfn['LocalGatewayId'] = obj.data.LocalGatewayId;
+        reqParams.tf['local_gateway_id'] = obj.data.LocalGatewayId;
+        reqParams.cfn['DestinationPrefixListId'] = obj.data.DestinationPrefixListId;
+        reqParams.tf['destination_prefix_list_id'] = obj.data.DestinationPrefixListId;
+        reqParams.cfn['CoreNetworkArn'] = obj.data.CoreNetworkArn;
+        reqParams.tf['core_network_arn'] = obj.data.CoreNetworkArn;
+        reqParams.cfn['EgressOnlyInternetGatewayId'] = obj.data.EgressOnlyInternetGatewayId;
+        reqParams.tf['egress_only_internet_gateway_id'] = obj.data.EgressOnlyInternetGatewayId;
         tracked_resources.push({
             'obj': obj,
             'logicalId': getResourceName('ec2', obj.id, 'AWS::EC2::Route'),
@@ -5693,6 +5711,14 @@ service_mapping_functions.push(function(reqParams, obj, tracked_resources){
             });
             reqParams.cfn['SecurityGroupIds'] = [...new Set(reqParams.cfn['SecurityGroupIds'])]; // unique list
             reqParams.tf['security_group_ids'] = [...new Set(reqParams.tf['security_group_ids'])]; // unique list
+        }
+        if (obj.data.Tags) {
+            reqParams.tf['tags'] = new Map();
+            obj.data.Tags.forEach(tag => {
+                if (!tag.Key.startsWith("aws:")) {
+                    reqParams.tf['tags'].set(tag['Key'], tag['Value']);
+                }
+            });
         }
 
         tracked_resources.push({

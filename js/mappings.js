@@ -2561,6 +2561,9 @@ function generateTerraformImportId(resourceType, physicalId, resourceData) {
             if (resourceData && resourceData.RouteTableId && resourceData.DestinationIpv6CidrBlock) {
                 return `${resourceData.RouteTableId}_${resourceData.DestinationIpv6CidrBlock}`;
             }
+            if (resourceData && resourceData.RouteTableId && resourceData.DestinationPrefixListId) {
+                return `${resourceData.RouteTableId}_${resourceData.DestinationPrefixListId}`;
+            }
             break;
             
         case 'aws_internet_gateway_attachment':
@@ -3176,11 +3179,9 @@ function generateTerraformImportId(resourceType, physicalId, resourceData) {
             break;
 
         case 'aws_vpn_gateway_attachment':
-            // VPN gateway attachments use vpn-gateway-id:vpc-id format
-            if (resourceData && resourceData.VpnGatewayId && resourceData.VpcId) {
-                return `${resourceData.VpnGatewayId}:${resourceData.VpcId}`;
-            }
-            break;
+                    // VPN gateway attachments cannot be imported (Terraform does not support import)
+                    // Explicitly return undefined so no import block is generated
+                    return undefined;
 
         case 'aws_vpn_gateway_route_propagation':
             // VPN gateway route propagations use route-table-id:vpn-gateway-id format
@@ -4464,16 +4465,18 @@ function outputMapTf(index, service, type, options, region, was_blocked, logical
             }
         }
         
-        if (physicalId) {
-            // Generate the correct import ID format based on resource type
-            var importId = generateTerraformImportId(type, physicalId, resourceData);
-            importBlock = `
+                if (physicalId) {
+                        // Generate the correct import ID format based on resource type
+                        var importId = generateTerraformImportId(type, physicalId, resourceData);
+                        if (importId !== undefined && importId !== null) {
+                                importBlock = `
 import {
-  to = ${type}.${logicalId}
-  id = "${importId}"
+    to = ${type}.${logicalId}
+    id = "${importId}"
 }
 `;
-        }
+                        }
+                }
     }
 
     if (params.trim() == "") {
